@@ -2,10 +2,11 @@ use std::io::{{self, Read, Write}};
 
 const DATA_SIZE: usize = {};
 
-fn main() {{
+fn main() -> io::Result<()> {{
     let mut data = [0_u8; DATA_SIZE];
     let mut ptr = 0;
     let mut stdin = io::stdin().bytes();
     let mut stdout = io::stdout();
     {}
+    Ok(())
 }}

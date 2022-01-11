@@ -1,4 +1,9 @@
-use std::{error::Error, fs::File, io::Write, process::Command};
+use std::{
+    error::Error,
+    fs::File,
+    io::{self, Write},
+    process::Command,
+};
 
 use clap::Parser;
 
@@ -29,20 +34,33 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     let brainfuck = std::fs::read_to_string(&args.in_file)?;
     let mut rust_code = String::new();
+    let mut bracket_count: u8 = 0;
     for c in brainfuck.chars() {
         rust_code.push_str(match c {
             '+' => "data[ptr] = data[ptr].wrapping_add(1);\n",
             '-' => "data[ptr] = data[ptr].wrapping_sub(1);\n",
             '>' => "ptr = (ptr + 1) % DATA_SIZE;\n",
             '<' => "ptr = ptr.checked_sub(1).unwrap_or(DATA_SIZE - 1);\n",
-            '[' => "while data[ptr] > 0 {\n",
-            ']' => "}\n",
-            ',' => "data[ptr] = stdin.next().expect(\"Not enough input\").unwrap();\n",
-            '.' => "stdout.write(&[data[ptr]]).unwrap();\n",
+            '[' => {
+                bracket_count = bracket_count
+                    .checked_add(1)
+                    .ok_or("Bracket nesting depth exceeded")?;
+                "while data[ptr] > 0 {\n"
+            }
+            ']' => {
+                bracket_count = bracket_count
+                    .checked_sub(1)
+                    .ok_or("Unmatched closing bracket")?;
+                "}\n"
+            }
+            ',' => "data[ptr] = stdin.next().expect(\"Not enough input\")?;\n",
+            '.' => "stdout.write(&[data[ptr]])?;\n",
             _ => "",
         })
     }
-    rust_code.push_str("stdout.flush().unwrap();\n");
+    if bracket_count > 0 {
+        return Err("Unmatched opening bracket".into());
+    }
     let temp_rs_file = "/tmp/temp.rs";
     write!(
         File::create(temp_rs_file)?,
@@ -50,8 +68,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         args.data_size,
         rust_code
     )?;
-    Command::new("rustc")
+    let output = Command::new("rustc")
         .args(["-o", &out_file, "-O", temp_rs_file])
         .output()?;
+    if !output.status.success() {
+        io::stdout().write_all(&output.stdout)?;
+        io::stderr().write_all(&output.stderr)?;
+        return Err("The rust compiler failed".into());
+    }
     Ok(())
 }
